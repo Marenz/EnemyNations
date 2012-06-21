@@ -10,5 +10,22 @@ Message me if you need help.
 
 See license.txt for the license.
 
+Goals
+=====
+
+Well, ultimately to port it to linux and update the graphics and udpade the
+weird userinterface to something more usable. 
+But step by step:
+
+1. Update to compile with Visual C++ 2010 
+2. Port to Linux
+3. Enhance rendering engine and graphics 
+4. Enhance userinterface
 
 --Marenz
+
+
+Related
+=======
+
+There is also the (Enemy Nations Revival Project)[http://groups.google.com/forum] which seems pretty dead though.
