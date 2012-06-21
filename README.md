@@ -17,7 +17,7 @@ Well, ultimately to port it to linux and update the graphics and udpade the
 weird userinterface to something more usable. 
 But step by step:
 
-1. Update to compile with Visual C++ 2010 
+1. Update to compile with Visual C++ 2010 and remove CD check 
 2. Port to Linux
 3. Enhance rendering engine and graphics 
 4. Enhance userinterface
@@ -28,4 +28,4 @@ But step by step:
 Related
 =======
 
-There is also the (Enemy Nations Revival Project)[http://groups.google.com/forum] which seems pretty dead though.
+There is also the [Enemy Nations Revival Project](http://groups.google.com/forum) which seems pretty dead though.
