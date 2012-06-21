@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?><?xml-stylesheet type='text/xsl' href='_UpgradeReport_Files/UpgradeReport.xslt'?><UpgradeLog>
+<Properties><Property Name="Solution" Value="lastplnt">
+</Property><Property Name="Solution File" Value="Z:\projects\enemynations\enations\src\lastplnt.sln">
+</Property><Property Name="Date" Value="Donnerstag, 21. Juni 2012">
+</Property><Property Name="Time" Value="12:20:54">
+</Property><Property Name="Log Number" Value="2">
+</Property></Properties><Event ErrorLevel="0" Project="lastplnt" Source="lastplnt.mak" Description="Converting project file 'Z:\projects\enemynations\enations\src\lastplnt.mak'.">
+</Event><Event ErrorLevel="2" Project="Z:\projects\enemynations\enations\src\lastplnt.mak" Source="" Description="The following error has occurred during XML parsing:&#xA;&#xA;File: Z:\projects\enemynations\enations\src\lastplnt.mak&#xA;Line: 1&#xA;Column: 1&#xA;Error Message:&#xA;Incorrect document syntax.&#xA;&#xA;The file 'Z:\projects\enemynations\enations\src\lastplnt.mak' has failed to load.">
+</Event><Event ErrorLevel="2" Project="lastplnt" Source="lastplnt.mak" Description="End tag 'xs:choice' does not match the start tag 'xs:sequence'.&#xA;">
+</Event><Event ErrorLevel="2" Project="lastplnt" Source="lastplnt.mak" Description="Project upgrade failed.">
+</Event><Event ErrorLevel="3" Project="lastplnt" Source="lastplnt.mak" Description="Not Converted">
+</Event><Event ErrorLevel="2" Project="" Source="lastplnt.mak" Description="Project upgrade failed.">
+</Event></UpgradeLog>
