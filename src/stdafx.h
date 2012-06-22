@@ -23,8 +23,10 @@
 #include <limits.h>
 #include <malloc.h>
 #include <math.h>
-#include <strstrea.h>
-#include <ctl3d.h>
+#include <strstream>
+
+// Marenz: Used for 3d effects in the pre win95 area
+//#include <ctl3d.h>
 #include <eh.h>
 #include <ctype.h>
 #include <locale.h>
@@ -32,12 +34,15 @@
 #include <ddraw.h>
 #include <dsound.h>
 //#include <dplay.h>
-#include <wing.h>
+
+// Marenz: No idea what this was for
+//#include <wing.h>
 
 #include <mssw.h>
 
 //#define MEM_DEBUG	1
-#include <smrtheap.hpp>
+// Marenz: some alternative heap manager I guess
+//#include <smrtheap.hpp>
 
 #include "windward.h"
 #include "vdmplay.h"
