@@ -41,7 +41,7 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 
 //---------------------------------- C D I B ------------------------------
 //
-// A DIB using memory, WinG, CreateDibSection, or DirectDraw
+// A DIB using memory buffers, DIB sections, or the modern renderer surfaces
 // This class is WIP
 
 //-------------------------------------------------------------------------
@@ -58,7 +58,6 @@ CDIB::CDIB(
 		m_eType		 	  ( eType       ),
 		m_iDir		 	  ( eDirection  ),
 		m_pBits		 	  ( NULL ),
-		m_pddsurfaceBack ( NULL ),
 		m_hDCDib     	  ( NULL ),
 		m_hOrigBm	 	  ( NULL ),
 		m_hTextBm	 	  ( NULL ),
@@ -67,35 +66,9 @@ CDIB::CDIB(
 		m_iLock			  ( 0 ),
 		m_bBitmapSelected( FALSE )
 {
-	switch ( GetType() )
+	if ( CBLTFormat::DIB_RENDERER == GetType() || CBLTFormat::DIB_DIBSECTION == GetType() || CBLTFormat::DIB_MEMORY == GetType() )
 	{
-		case CBLTFormat::DIB_WING:
-
-			if ( !CWinG::GetTheWinG() || NULL == ( m_hDCDib = CWinG::GetTheWinG()->CreateDC() ))
-				m_eType = CBLTFormat::DIB_MEMORY;
-			else
-				m_ptrwing = ptrtheWinG;
-
-			break;
-
-		case CBLTFormat::DIB_DIRECTDRAW:
-
-			if ( !CDirectDraw::GetTheDirectDraw() )
-				m_eType = CBLTFormat::DIB_MEMORY;
-			else
-				m_ptrdirectdraw = ptrtheDirectDraw;
-
-			break;
-	}
-
-	switch ( GetType() )
-	{
-		case CBLTFormat::DIB_DIBSECTION:
-		case CBLTFormat::DIB_MEMORY:
-
-			m_hDCDib = CreateCompatibleDC( NULL );
-
-			break;
+		m_hDCDib = CreateCompatibleDC( NULL );
 	}
 
 	// get the BITMAPINFO
@@ -142,9 +115,6 @@ CDIB::~CDIB()
 		DeleteDC( m_hDCDib );
 		}
 
-	if ( m_pddsurfaceBack )
-		m_pddsurfaceBack->Release();
-
 	if ( m_pBits && CBLTFormat::DIB_MEMORY == GetType() )
 		delete [] m_pBits;
 }
@@ -154,188 +124,116 @@ CDIB::~CDIB()
 //-------------------------------------------------------------------------
 BOOL
 CDIB::Resize(
-	int	cx,
-	int	cy )
+        int     cx,
+        int     cy )
 {
-	ASSERT( ! IsLocked() );
+        ASSERT( ! IsLocked() );
 
-	#ifdef DEBUG
-	
-	if ( m_hOrigBm != NULL )		// first time in the bitmap isn't created yet
-		ASSERT_STRICT_VALID( this );
+#ifdef DEBUG
 
-	#endif
+        if ( m_hOrigBm != NULL )                // first time in the bitmap isn't created yet
+                ASSERT_STRICT_VALID( this );
 
-	if ( cx == m_cx && cy == m_cy )
-		return TRUE;
+#endif
 
-	if ( m_hTextBm != NULL )
-		{
-		DeleteObject( m_hTextBm );
-		m_hTextBm = NULL;
-		}
+        if ( cx == m_cx && cy == m_cy )
+                return TRUE;
 
-	if ( m_pBits && CBLTFormat::DIB_MEMORY == GetType() )
-	{
-		delete [] m_pBits;
+        if ( m_hTextBm != NULL )
+        {
+                DeleteObject( m_hTextBm );
+                m_hTextBm = NULL;
+        }
 
-		m_pBits = NULL;
-	}
+        if ( m_pBits && CBLTFormat::DIB_MEMORY == GetType() )
+        {
+                delete [] m_pBits;
 
-	// select orig bm & delete old size bm first so we don't have 2 giant Allocs at once
+                m_pBits = NULL;
+        }
 
-	if ( m_hOrigBm != NULL )
-	{
-		HBITMAP hPrevBm = ( HBITMAP )SelectObject( m_hDCDib, m_hOrigBm );
+        // select orig bm & delete old size bm first so we don't have 2 giant Allocs at once
 
-		m_hOrigBm = NULL;
+        if ( m_hOrigBm != NULL )
+        {
+                HBITMAP hPrevBm = ( HBITMAP )SelectObject( m_hDCDib, m_hOrigBm );
 
-		DeleteObject( hPrevBm );
-	}
+                m_hOrigBm = NULL;
 
-	m_cx = Max( 1, cx );
-	m_cy = Max( 1, cy );
+                DeleteObject( hPrevBm );
+        }
 
-	m_bmi.hdr.biWidth  = m_cx;
-	m_bmi.hdr.biHeight = m_cy * m_iDir;
+        m_cx = Max( 1, cx );
+        m_cy = Max( 1, cy );
 
-	HBITMAP hbm = NULL;
-	int	  i;
-	WORD	 *pw;
+        m_bmi.hdr.biWidth  = m_cx;
+        m_bmi.hdr.biHeight = m_cy * m_iDir;
 
-	//-----------------------------------
-	// Create identity translation table
-	//-----------------------------------
+        BITMAPINFO256 *pIdentity = m_ptrbmiIdentity.Value();
 
-	if ( !m_ptrbmiIdentity.Value() )
-		m_ptrbmiIdentity = new BITMAPINFO256;
+        if ( !pIdentity )
+        {
+                m_ptrbmiIdentity = new BITMAPINFO256;
+                pIdentity = m_ptrbmiIdentity.Value();
+        }
 
-	memcpy( m_ptrbmiIdentity.Value(), &m_bmi, sizeof( BITMAPINFO256 ));
+        memcpy( pIdentity, &m_bmi, sizeof( BITMAPINFO256 ) );
 
-	pw = ( WORD * )m_ptrbmiIdentity->rgb;
+        WORD *pw = ( WORD * )pIdentity->rgb;
 
-	for ( i = 0; i < 256; ++i )
-		*pw++ = ( WORD )i;
+        for ( int i = 0; i < 256; ++i )
+                *pw++ = ( WORD )i;
 
-	//-------------------
-	// Create the bitmap
-	//-------------------
+        HBITMAP hbm = NULL;
 
-	switch ( GetType() )
-	{
-		case CBLTFormat::DIB_WING:
+        switch ( GetType() )
+        {
+                case CBLTFormat::DIB_RENDERER:
+                case CBLTFormat::DIB_DIBSECTION:
+                {
+                        SelectPalette( m_hDCDib, thePal.hPal(), FALSE );
 
-			ASSERT_STRICT_VALID( CWinG::GetTheWinG() );
+                        hbm = CreateDIBSection( m_hDCDib,
+                                                                                        ( BITMAPINFO * )pIdentity,
+                                                                                        DIB_PAL_COLORS,
+                                                                                        ( void ** )&m_pBits,
+                                                                                        NULL,
+                                                                                        0 );
+                        break;
+                }
 
-			m_bmi.hdr.biWidth = ( m_bmi.hdr.biWidth + 3 ) & ~ 3;
-			hbm = CWinG::GetTheWinG()->CreateBitmap( m_hDCDib,
-													  			  ( BITMAPINFO * )&m_bmi,
-													  			  ( void ** )&m_pBits );
-			break;
+                case CBLTFormat::DIB_MEMORY:
 
-		case CBLTFormat::DIB_DIBSECTION:
-		{
-			SelectPalette( m_hDCDib, thePal.hPal(), FALSE );
+                        m_pBits = new BYTE [ GetHeight() * (( GetBytesPerPixel() * m_bmi.hdr.biWidth + 3 ) & ~3 )];
 
-			hbm = CreateDIBSection( m_hDCDib,
-											( BITMAPINFO * )m_ptrbmiIdentity.Value(),
-											DIB_PAL_COLORS,
-											// GetColorUse(),
-											( void ** )&m_pBits,
-											NULL,
-											0 );
-			break;
-		}
+                        break;
+        }
 
-		case CBLTFormat::DIB_DIRECTDRAW:
+        if ( CBLTFormat::DIB_MEMORY != GetType() && hbm == NULL )
+                return FALSE;
 
-			//
-			//	create an off-screen surface
-			//
+        if ( 1 == GetBytesPerPixel() )
+        {
+                if ( 0 == m_bmi.hdr.biClrUsed )
+                        m_bmi.hdr.biClrUsed = 256;
 
-			if ( m_pddsurfaceBack )
-			{
-				m_hRes = GetDDSurface()->Release();
+                if ( 0 == m_bmi.hdr.biClrImportant )
+                        m_bmi.hdr.biClrImportant = 256;
+        }
 
-				m_pddsurfaceBack = NULL;
+        m_lPitch = ( GetBytesPerPixel() * m_bmi.hdr.biWidth + 3 ) & ~3;
+        m_lDirPitch = -m_iDir * m_lPitch;
 
-				if ( FAILED( m_hRes ))
-				{
-					TRACE( "Off-screen surface release failed." );
+        m_bmi.hdr.biSizeImage = GetHeight() * m_lPitch;
 
-					return FALSE;
-				}
-			}
+        if ( hbm )
+                m_hOrigBm = ( HBITMAP )SelectObject( m_hDCDib, hbm );
 
-			memset( &m_ddOffSurfDesc, 0, sizeof( DDSURFACEDESC ));
+        memcpy( &m_ptrbmiIdentity->hdr, &m_bmi.hdr, sizeof( BITMAPINFOHEADER ));
 
-			m_ddOffSurfDesc.dwSize			 = sizeof( DDSURFACEDESC );
-			m_ddOffSurfDesc.dwFlags 	  	 = DDSD_CAPS | DDSD_HEIGHT | DDSD_WIDTH;
-			m_ddOffSurfDesc.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY;
-			m_ddOffSurfDesc.dwWidth			 = GetWidth();
-			m_ddOffSurfDesc.dwHeight		 = GetHeight();
+        SyncPalette();
 
-			m_hRes = CDirectDraw::GetTheDirectDraw()->GetDD()->CreateSurface( &m_ddOffSurfDesc, &m_pddsurfaceBack, NULL );
-
-			if ( FAILED( m_hRes ))
-			{
-				TRACE( "Off-screen surface create failed." );
-
-				return FALSE;
-			}
-
-			//
-			//	get a full description of the surface
-			//
-
-			m_hRes = m_pddsurfaceBack->GetSurfaceDesc( &m_ddOffSurfDesc );
-
-			if ( FAILED( m_hRes ))
-			{
-				TRACE( "Off-screen Surface GetSurfaceDesc failed." );
-
-				return FALSE;
-			}
-
-			break;
-
-		case CBLTFormat::DIB_MEMORY:
-
-			m_pBits = new BYTE [ GetHeight() * (( GetBytesPerPixel() * m_bmi.hdr.biWidth + 3 ) & ~3 )];
-
-			break;
-
-	}
-
-	if ( CBLTFormat::DIB_MEMORY != GetType() && hbm == NULL && m_pddsurfaceBack == NULL )
-		return FALSE;
-
-	if ( 1 == GetBytesPerPixel() )
-	{
-		if ( 0 == m_bmi.hdr.biClrUsed )
-			m_bmi.hdr.biClrUsed = 256;
-
-		if ( 0 == m_bmi.hdr.biClrImportant )
-			m_bmi.hdr.biClrImportant = 256;
-	}
-
-	if ( CBLTFormat::DIB_DIRECTDRAW == GetType() )
-		m_lPitch = m_ddOffSurfDesc.lPitch;
-	else
-		m_lPitch = ( GetBytesPerPixel() * m_bmi.hdr.biWidth + 3 ) & ~3;
-
-	m_lDirPitch = -m_iDir * m_lPitch;
-
-	m_bmi.hdr.biSizeImage = GetHeight() * m_lPitch;
-
-	if ( hbm )
-		m_hOrigBm = ( HBITMAP )SelectObject( m_hDCDib, hbm );
-
-	memcpy( &m_ptrbmiIdentity->hdr, &m_bmi.hdr, sizeof( BITMAPINFOHEADER ));
-
-  	SyncPalette();
-
-	return TRUE;
+        return TRUE;
 }
 
 //-------------------------------------------------------------------------
@@ -344,38 +242,14 @@ CDIB::Resize(
 BOOL
 CDIB::Lock()
 {
-	ASSERT_STRICT_VALID( this );
+        ASSERT_STRICT_VALID( this );
 
-	m_iLock++;
+        m_iLock++;
 
-	switch ( GetType() )
-	{
-		case CBLTFormat::DIB_DIRECTDRAW:
+        if ( CBLTFormat::DIB_RENDERER == GetType() || CBLTFormat::DIB_DIBSECTION == GetType() )
+                GdiFlush();
 
-			ASSERT_STRICT( m_pddsurfaceBack );
-
-			if ( m_pBits )
-				return TRUE;
-
-			m_hRes = GetDDSurface()->Lock( 0, &m_ddOffSurfDesc, DDLOCK_SURFACEMEMORYPTR | DDLOCK_WAIT, 0 );
-
-			if ( SUCCEEDED( m_hRes ))
-			{
-				m_pBits = ( LPBYTE )m_ddOffSurfDesc.lpSurface;
-
-				return TRUE;						
-			}
-
-			return FALSE;
-
-		case CBLTFormat::DIB_WING:
-		case CBLTFormat::DIB_DIBSECTION:
-
-			GdiFlush();
-			break;
-	}
-
-	return TRUE;
+        return TRUE;
 }
 
 //-------------------------------------------------------------------------
@@ -383,30 +257,13 @@ CDIB::Lock()
 //-------------------------------------------------------------------------
 BOOL CDIB::Unlock()
 {
-	ASSERT_STRICT_VALID( this );
+        ASSERT_STRICT_VALID( this );
 
-	ASSERT( 0 < m_iLock );
+        ASSERT( 0 < m_iLock );
 
-	m_iLock--;
+        m_iLock--;
 
-	if ( CBLTFormat::DIB_DIRECTDRAW == GetType() )
-	{
-		if ( m_pBits )
-		{
-			m_hRes = GetDDSurface()->Unlock( m_pBits );
-
-			if ( SUCCEEDED( m_hRes ))
-			{
-				m_pBits = 0;
-
-				return TRUE;
-			}
-		}
-
-		return FALSE;
-	}
-
-	return TRUE;
+        return TRUE;
 }
 
 //-------------------------------------------------------------------------
@@ -442,9 +299,6 @@ CDIB::Clear(
 	{
 		if ( prect == NULL )
 		{
-			if ( CBLTFormat::DIB_DIRECTDRAW != GetType() ||
-				  m_ddOffSurfDesc.lPitch == ( LONG )m_ddOffSurfDesc.dwWidth )
-
 				memset( pbyDst, iPaletteIndex, m_bmi.hdr.biSizeImage );
 
 			return;
@@ -567,31 +421,15 @@ CDIB::Scroll(
 void
 CDIB::SyncPalette()
 {
-	// Copy the palette to the dib header
+        // Copy the palette to the dib header
 
-	thePal.NewWnd( m_bmi );
+        thePal.NewWnd( m_bmi );
 
-	switch ( GetType() )
-	{
-		case CBLTFormat::DIB_WING:
-
-			SelectPalette( m_hDCDib, thePal.hPal(), FALSE );
-			CWinG::GetTheWinG()->SetDIBColorTable( m_hDCDib, 0, ( int )m_bmi.hdr.biClrUsed, m_bmi.rgb );
-			break;
-
-		case CBLTFormat::DIB_DIBSECTION:
-		case CBLTFormat::DIB_MEMORY:
-
-			SetDIBColorTable( m_hDCDib, 0, ( int )m_bmi.hdr.biClrUsed, m_bmi.rgb );
-
-			break;
-	}
-
-	if ( m_hDCDib != NULL )
-		{
-		thePal.Paint( m_hDCDib );
-//BUGBUG		thePal.EndPaint( m_hDCDib );
-		}
+        if ( m_hDCDib != NULL )
+        {
+                SetDIBColorTable( m_hDCDib, 0, ( int )m_bmi.hdr.biClrUsed, m_bmi.rgb );
+                thePal.Paint( m_hDCDib );
+        }
 }
 
 //-------------------------------------------------------------------------
@@ -602,17 +440,27 @@ CDIB::NewPalette(
 	RGBQUAD const * pRgb,
 	int 				 iNumEntries )
 {
-	ASSERT_STRICT( 0 );	// Should go in CDIBWnd?
+	ASSERT_STRICT_VALID( this );
 
-	/*
-	ASSERT_STRICT_VALID (this);
+	if ( NULL == pRgb || iNumEntries <= 0 )
+		return;
 
-	ASSERT_STRICT( 1 == GetBytesPerPixel() );
+	int iCount = __min( iNumEntries, 256 );
 
-	thePal.SetColors ((RGBQUAD *) pRgb, 0, iNumEntries);
-	CWinG::GetTheWinG()->SetDIBColorTable( m_hDCDib, 0, iNumEntries, pRgb );
-	thePal.Paint (m_hDC);
-	*/
+	memcpy( m_bmi.rgb, pRgb, iCount * sizeof( RGBQUAD ) );
+	m_bmi.hdr.biClrUsed = iCount;
+
+	if ( m_hDCDib != NULL && GetBitsPerPixel() <= 8 )
+	{
+		::SetDIBColorTable( m_hDCDib, 0, iCount, pRgb );
+
+		RGBQUAD rgbTemp[ 256 ];
+		memcpy( rgbTemp, pRgb, iCount * sizeof( RGBQUAD ) );
+
+		thePal.SetColors( rgbTemp, 0, iCount );
+		thePal.UpdateDeviceColors( 0, iCount );
+		thePal.Paint( m_hDCDib );
+	}
 }
 
 //-------------------------------------------------------------------------
@@ -620,87 +468,68 @@ CDIB::NewPalette(
 //-------------------------------------------------------------------------
 int
 CDIB::BitBlt(
-	HDC    			hdcDst,
-	CRect  const & rectDst,
-	CPoint const & ptSrc )
+        HDC                     hdcDst,
+        CRect  const & rectDst,
+        CPoint const & ptSrc )
 {
-	ASSERT_STRICT_VALID( this );
+        ASSERT_STRICT_VALID( this );
 
-	CDIBits	bits = GetBits();
+        CDIBits bits = GetBits();
 
-	CPoint	ptSrcAdjusted = ptSrc;
+        CPoint  ptSrcAdjusted = ptSrc;
 
-	switch ( GetType() )
-	{
-		case CBLTFormat::DIB_WING:
+        switch ( GetType() )
+        {
+                case CBLTFormat::DIB_RENDERER:
+#ifdef _WIN32
+                {
+                        RECT rcDst = rectDst;
+                        RECT rcSrc = { ptSrcAdjusted.x, ptSrcAdjusted.y, ptSrcAdjusted.x + rectDst.Width(), ptSrcAdjusted.y + rectDst.Height() };
 
-			return CWinG::GetTheWinG()->BitBlt( hdcDst,
-												 			rectDst.left,
-													 		rectDst.top,
-													 		rectDst.Width(),
-													 		rectDst.Height(),
-													 		m_hDCDib,
-													 		ptSrcAdjusted.x,
-													 		ptSrcAdjusted.y );
+                        if ( CModernRenderer::GetTheRenderer() &&
+                             CModernRenderer::GetTheRenderer()->BlitFromDIB( hdcDst, rcDst, rcSrc, ( BITMAPINFO & )m_bmi, bits, GetPitch() ) )
+                                return TRUE;
+                }
+#endif
+                // Fall through to the DIB section handler if the renderer could not process the blit
 
-		case CBLTFormat::DIB_DIBSECTION:
+                case CBLTFormat::DIB_DIBSECTION:
 
-			return ::BitBlt( hdcDst,
-								  rectDst.left,
-								  rectDst.top,
-								  rectDst.Width(),
-								  rectDst.Height(),
-								  m_hDCDib,
-								  ptSrcAdjusted.x,
-								  ptSrcAdjusted.y,
-								  SRCCOPY );
+                        return ::BitBlt( hdcDst,
+                                                                  rectDst.left,
+                                                                  rectDst.top,
+                                                                  rectDst.Width(),
+                                                                  rectDst.Height(),
+                                                                  m_hDCDib,
+                                                                  ptSrcAdjusted.x,
+                                                                  ptSrcAdjusted.y,
+                                                                  SRCCOPY );
+        }
 
-		case CBLTFormat::DIB_DIRECTDRAW:
+        if ( IsBitmapSelected() )
+                return ::BitBlt( hdcDst,
+                                                  rectDst.left,
+                                                  rectDst.top,
+                                                  rectDst.Width(),
+                                                  rectDst.Height(),
+                                                  m_hDCDib,
+                                                  ptSrcAdjusted.x,
+                                                  ptSrcAdjusted.y,
+                                                  SRCCOPY );
 
-			TRAP();
-
-			ASSERT_STRICT( 0 );	// FIXIT: Implement
-
-			return 0;
-
-		case CBLTFormat::DIB_MEMORY:
-
-			if ( !IsTopDown() )
-				ptSrcAdjusted.y += GetHeight() - ptSrcAdjusted.y - ptSrcAdjusted.y - rectDst.Height();
-
-			::SetStretchBltMode( hdcDst, COLORONCOLOR );
-
-			if ( IsBitmapSelected() )
-				return ::BitBlt( hdcDst,
-									  rectDst.left,
-									  rectDst.top,
-								  	  rectDst.Width(),
-								  	  rectDst.Height(),
-								  	  m_hDCDib,
-								  	  ptSrcAdjusted.x,
-								  	  ptSrcAdjusted.y,
-								  	  SRCCOPY );
-
-			return StretchDIBits( hdcDst,
-										 rectDst.left,
-										 rectDst.top,
-										 rectDst.Width(),
-										 rectDst.Height(),
-										 ptSrcAdjusted.x,
-										 ptSrcAdjusted.y,
-										 rectDst.Width(),
-										 rectDst.Height(),
-										 ( void * )( BYTE * )bits,
-										 ( BITMAPINFO * )m_ptrbmiIdentity.Value(),
-										 DIB_PAL_COLORS,
-										 SRCCOPY );
-
-		default:
-
-			ASSERT_STRICT( 0 );
-
-			return 0;
-	}
+        return StretchDIBits( hdcDst,
+                                                 rectDst.left,
+                                                 rectDst.top,
+                                                 rectDst.Width(),
+                                                 rectDst.Height(),
+                                                 ptSrcAdjusted.x,
+                                                 ptSrcAdjusted.y,
+                                                 rectDst.Width(),
+                                                 rectDst.Height(),
+                                                 ( void * )( BYTE * )bits,
+                                                 ( BITMAPINFO * )m_ptrbmiIdentity.Value(),
+                                                 DIB_PAL_COLORS,
+                                                 SRCCOPY );
 }
 
 //-------------------------------------------------------------------------
@@ -708,90 +537,77 @@ CDIB::BitBlt(
 //-------------------------------------------------------------------------
 int
 CDIB::StretchBlt(
-	HDC    			hdcDst,
-	CRect const & rectDst,
-	CRect const & rectSrc )
+        HDC                     hdcDst,
+        CRect const & rectDst,
+        CRect const & rectSrc )
 {
-	ASSERT_STRICT_VALID (this);
+        ASSERT_STRICT_VALID (this);
 
-	CDIBits	bits = GetBits();
+        CDIBits bits = GetBits();
 
-	CRect	rectSrcAdjusted = rectSrc;
+        CRect   rectSrcAdjusted = rectSrc;
 
-	::SetStretchBltMode( hdcDst, COLORONCOLOR );
+        ::SetStretchBltMode( hdcDst, COLORONCOLOR );
 
-	switch ( GetType() )
-	{
-		case CBLTFormat::DIB_WING:
+        switch ( GetType() )
+        {
+                case CBLTFormat::DIB_RENDERER:
+#ifdef _WIN32
+                {
+                        RECT rcDst = rectDst;
+                        RECT rcSrc = rectSrcAdjusted;
 
-			return CWinG::GetTheWinG()->StretchBlt( hdcDst,
-												 		  		 rectDst.left,
-													 		  	 rectDst.top,
-													 		  	 rectDst.Width(),
-													 		  	 rectDst.Height(),
-													 		  	 m_hDCDib,
-													 		  	 rectSrcAdjusted.left,
-													 		  	 rectSrcAdjusted.top,
-													 		  	 rectSrcAdjusted.Width(),
-													 		  	 rectSrcAdjusted.Height() );
+                        if ( CModernRenderer::GetTheRenderer() &&
+                             CModernRenderer::GetTheRenderer()->BlitFromDIB( hdcDst, rcDst, rcSrc, ( BITMAPINFO & )m_bmi, bits, GetPitch() ) )
+                                return TRUE;
+                }
+#endif
+                case CBLTFormat::DIB_DIBSECTION:
 
-		case CBLTFormat::DIB_DIBSECTION:
+                        return ::StretchBlt( hdcDst,
+                                                   rectDst.left,
+                                                   rectDst.top,
+                                                   rectDst.Width(),
+                                                   rectDst.Height(),
+                                                   m_hDCDib,
+                                                   rectSrcAdjusted.left,
+                                                   rectSrcAdjusted.top,
+                                                   rectSrcAdjusted.Width(),
+                                                   rectSrcAdjusted.Height(),
+                                                   SRCCOPY );
 
-			return ::StretchBlt( hdcDst,
-									 	rectDst.left,
-									 	rectDst.top,
-									 	rectDst.Width(),
-									 	rectDst.Height(),
-						 		    	m_hDCDib,
-									 	rectSrcAdjusted.left,
-									 	rectSrcAdjusted.top,
-									 	rectSrcAdjusted.Width(),
-									 	rectSrcAdjusted.Height(),
-									 	SRCCOPY );
+                default:
 
-		case CBLTFormat::DIB_DIRECTDRAW:
+                        if ( rectDst.Height() == rectSrc.Height() )
+                                rectSrcAdjusted += CPoint( 0, GetHeight() - rectSrcAdjusted.top - rectSrcAdjusted.bottom );
 
-			TRAP();
+                        if ( IsBitmapSelected() )
+                                return ::StretchBlt( hdcDst,
+                                                            rectDst.left,
+                                                            rectDst.top,
+                                                            rectDst.Width(),
+                                                            rectDst.Height(),
+                                                            m_hDCDib,
+                                                            rectSrcAdjusted.left,
+                                                            rectSrcAdjusted.top,
+                                                            rectSrcAdjusted.Width(),
+                                                            rectSrcAdjusted.Height(),
+                                                            SRCCOPY );
 
-			ASSERT_STRICT( 0 );	// FIXIT: Implement
-
-			return 0;
-
-		default:
-
-//			if ( !IsTopDown() )
-			// GGTESTING
-			if ( rectDst.Height() == rectSrc.Height() )
-				rectSrcAdjusted += CPoint( 0, GetHeight() - rectSrcAdjusted.top - rectSrcAdjusted.bottom );
-
-			if ( IsBitmapSelected() )
-				return ::StretchBlt( hdcDst,
-										 	rectDst.left,
-										 	rectDst.top,
-										 	rectDst.Width(),
-										 	rectDst.Height(),
-							 		    	m_hDCDib,
-										 	rectSrcAdjusted.left,
-										 	rectSrcAdjusted.top,
-										 	rectSrcAdjusted.Width(),
-										 	rectSrcAdjusted.Height(),
-									 		SRCCOPY );
-
-			return StretchDIBits( hdcDst,
-									 	 rectDst.left,
-									 	 rectDst.top,
-								 		 rectDst.Width(),
-								 		 rectDst.Height(),
-									 	 rectSrcAdjusted.left,
-									 	 rectSrcAdjusted.top,
-								 		 rectSrcAdjusted.Width(),
-								 		 rectSrcAdjusted.Height(),
-									 	 ( void * )( BYTE * )bits,
-							 			 ( BITMAPINFO * )m_ptrbmiIdentity.Value(),
-										 DIB_PAL_COLORS,
-									 	 // GetColorUse(),
-										 SRCCOPY );
-	}
+                        return StretchDIBits( hdcDst,
+                                                         rectDst.left,
+                                                         rectDst.top,
+                                                         rectDst.Width(),
+                                                         rectDst.Height(),
+                                                         rectSrcAdjusted.left,
+                                                         rectSrcAdjusted.top,
+                                                         rectSrcAdjusted.Width(),
+                                                         rectSrcAdjusted.Height(),
+                                                         ( void * )( BYTE * )bits,
+                                                         ( BITMAPINFO * )m_ptrbmiIdentity.Value(),
+                                                         DIB_PAL_COLORS,
+                                                         SRCCOPY );
+        }
 }
 
 //-------------------------------------------------------------------------
@@ -1679,51 +1495,40 @@ IsTran4:
 HDC
 CDIB::GetDC()
 {
-	ASSERT( 0 == m_iLock );
-	ASSERT( !m_bBitmapSelected );
+        ASSERT( 0 == m_iLock );
+        ASSERT( !m_bBitmapSelected );
 
-	m_iLock++;
+        m_iLock++;
 
-	switch ( GetType() )
-	{
-		case CBLTFormat::DIB_DIRECTDRAW:
+        if ( CBLTFormat::DIB_MEMORY == GetType() )
+        {
+                CDIBits dibits = GetBits();
 
-			m_hRes = GetDDSurface()->GetDC( &m_hDCDib );
-			thePal.Paint( m_hDCDib );	// GG 9/11/96 - Just to be consistent, not sure if we need it
+                if ( m_hTextBm == NULL )
+                {
+                        HWND hWnd = GetActiveWindow();
+                        HDC hdc = ::GetDC( hWnd );
+                        thePal.Paint( hdc );
 
-			break;
+                        m_hTextBm = ::CreateCompatibleBitmap( hdc, GetWidth(), GetHeight() );
+                        thePal.EndPaint( hdc );
+                        ::ReleaseDC( hWnd, hdc );
+                }
 
-		case CBLTFormat::DIB_MEMORY: {
+                thePal.Paint( m_hDCDib );
 
-			CDIBits	dibits = GetBits();
+                ::SetDIBits( m_hDCDib, m_hTextBm, 0, abs( m_bmi.hdr.biHeight ),
+                                                                                                         ( void * )( BYTE * )dibits,
+                                                                                                         ( BITMAPINFO * )m_ptrbmiIdentity.Value(),
+                                                                                                         DIB_PAL_COLORS );
+                m_hOrigBm = ( HBITMAP )::SelectObject( m_hDCDib, m_hTextBm );
+        }
 
-			// do we need a bitmap?
-			if (m_hTextBm == NULL)
-				{
-				HWND hWnd = GetActiveWindow ();
-				HDC hdc = ::GetDC (hWnd);
-				thePal.Paint( hdc );
+        SyncPalette();
 
-				m_hTextBm = ::CreateCompatibleBitmap( hdc, GetWidth(), GetHeight() );
-				thePal.EndPaint( hdc );
-				::ReleaseDC ( hWnd, hdc );
-				}
+        m_bBitmapSelected = TRUE;
 
-			thePal.Paint( m_hDCDib );
-
-			::SetDIBits ( m_hDCDib, m_hTextBm, 0, abs( m_bmi.hdr.biHeight ), 
-													  ( void * )( BYTE * )dibits,
-										 			  ( BITMAPINFO * )m_ptrbmiIdentity.Value(),
-													  DIB_PAL_COLORS );
-			m_hOrigBm = ( HBITMAP )::SelectObject( m_hDCDib, m_hTextBm );
-			break; }
-	}
-
-	SyncPalette ();
-
-	m_bBitmapSelected = TRUE;
-
-	return m_hDCDib;
+        return m_hDCDib;
 }
 
 //-------------------------------------------------------------------------
@@ -1731,44 +1536,32 @@ CDIB::GetDC()
 //-------------------------------------------------------------------------
 void
 CDIB::ReleaseDC(
-	BOOL bSaveChanges )
+        BOOL bSaveChanges )
 {
-	ASSERT( 1 == m_iLock );
-	ASSERT( m_bBitmapSelected );
+        ASSERT( 1 == m_iLock );
+        ASSERT( m_bBitmapSelected );
 
-	m_iLock--;
+        m_iLock--;
 
-	switch ( GetType() )
-	{
-		case CBLTFormat::DIB_DIRECTDRAW:
+        if ( CBLTFormat::DIB_MEMORY == GetType() )
+        {
+                CDIBits dibits = GetBits();
 
-			thePal.EndPaint( m_hDCDib );
-			m_hRes = GetDDSurface()->ReleaseDC( m_hDCDib );
-			break;
+                thePal.Paint( m_hDCDib );
+                ::SelectObject( m_hDCDib, m_hOrigBm );
 
-		case CBLTFormat::DIB_MEMORY: {
+                if ( bSaveChanges )
+                        ::GetDIBits( m_hDCDib, m_hTextBm, 0, ( WORD )abs( m_bmi.hdr.biHeight ),
+                                                         dibits, ( BITMAPINFO * )m_ptrbmiIdentity.Value(), DIB_PAL_COLORS );
 
-			// read the data back (same format we delivered it as
-			CDIBits	dibits = GetBits();
+                thePal.EndPaint( m_hDCDib );
+        }
+        else
+        {
+                thePal.EndPaint( m_hDCDib );
+        }
 
-			thePal.Paint (m_hDCDib);
-			::SelectObject( m_hDCDib, m_hOrigBm );
-
-			thePal.Paint (m_hDCDib);	// GGTESTING
-
-			if ( bSaveChanges )
-				::GetDIBits( m_hDCDib, m_hTextBm, 0, (WORD)abs( m_bmi.hdr.biHeight ), 
-								 dibits, ( BITMAPINFO * )m_ptrbmiIdentity.Value(), DIB_PAL_COLORS );
-			thePal.EndPaint( m_hDCDib );
-
-			break; }
-
-		default:
-			thePal.EndPaint( m_hDCDib );
-			break;
-	}
-
-	m_bBitmapSelected = FALSE;
+        m_bBitmapSelected = FALSE;
 }
 
 //-------------------------------------------------------------------------

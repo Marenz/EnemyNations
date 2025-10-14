@@ -23,23 +23,15 @@ CLog theLog;
 // create a log file
 CLog::CLog()
 {
-
-	memset (&m_cs, 0, sizeof (m_cs));
-	InitializeCriticalSection(&m_cs);
-
-	m_iSection = m_iLevel = 0;
-	m_bLogToFile = m_bLogToDebug = m_bOpened = FALSE;
-	m_File.m_hFile = (unsigned int) -1;
+        m_iSection = m_iLevel = 0;
+        m_bLogToFile = m_bLogToDebug = m_bOpened = FALSE;
+        m_File.m_hFile = (unsigned int) -1;
 }
 
 CLog::~CLog()
 {
-
-	if ((m_bLogToFile) || (m_bLogToDebug))
-		DeleteCriticalSection(&m_cs);
-
-	if (m_File.m_hFile != -1)
-		m_File.Close ();
+        if (m_File.m_hFile != -1)
+                m_File.Close ();
 }
 
 BOOL CLog::OkLevel (int iLevel, int iSection) const
@@ -75,10 +67,10 @@ void CLog::Write (int iLevel, int iSection, char const * pBuf)
 		m_iLevel = ptheApp->GetProfileInt ("Logging", "Level", LOG_PRI_USEFUL);
 		}
 
-	if ((iLevel > m_iLevel) || (! (m_iSection & iSection)))
-		return;
+        if ((iLevel > m_iLevel) || (! (m_iSection & iSection)))
+                return;
 
-	EnterCriticalSection (&m_cs);
+        windward::platform::CriticalSectionLock guard(m_cs);
 
 	// write to the file (we assume an exception is disk full)
 	if (m_bLogToFile)
@@ -100,7 +92,6 @@ void CLog::Write (int iLevel, int iSection, char const * pBuf)
 		OutputDebugString (pBuf);
 #endif
 
-	LeaveCriticalSection (&m_cs);
 }
 
 void logPrintf (int iLevel, int iSection, char const * pFrmt, ...)

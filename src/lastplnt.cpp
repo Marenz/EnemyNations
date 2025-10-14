@@ -8,6 +8,7 @@
 
 #include "stdafx.h"
 #include <new.h>
+#include <intrin.h>
 #include <ctype.h>
 #include <locale.h>
 
@@ -35,6 +36,24 @@
 
 #include "terrain.inl"
 #include "creatmul.inl"
+
+
+namespace {
+
+inline unsigned __int64 ReadTimeStampCounter() noexcept
+{
+#if defined(_MSC_VER)
+    return __rdtsc();
+#elif defined(__i386__) || defined(__x86_64__)
+    return __builtin_ia32_rdtsc();
+#else
+    return 0;
+#endif
+}
+
+static volatile unsigned long long g_cpuBurnAccumulator = 0;
+
+} // namespace
 
 
 #ifdef _DEBUG
@@ -458,49 +477,37 @@ BOOL CConquerApp::InitInstance()
 		if ( (si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_INTEL) && (si.wProcessorLevel >= 5) )
 			{
 			// in case processor can't handle rdtsc
-			try
-				{
-				static int dwStart, dwHigh, dwEnd;
-				m_iCpuSpeed = INT_MAX;
-				for (int iTry=0; iTry<4; iTry++)
-					{
-					::Sleep (10);
+                        try
+                                {
+                                m_iCpuSpeed = INT_MAX;
+                                for ( int iTry = 0; iTry < 4; iTry++ )
+                                        {
+                                        ::Sleep( 10 );
 
-					// get the clock count
-					__asm	
-						{
-						_emit 0fh
-						_emit 31h	// rdtsc
-						mov [dwStart], eax
-						mov [dwHigh], edx
-						}
+                                        unsigned __int64 startTicks = ReadTimeStampCounter();
 
-					// wait 250 ms
-					DWORD dwTime = timeGetTime () + 250;
-					while ( timeGetTime () < dwTime )
-						;
+                                        DWORD dwTime = timeGetTime() + 250;
+                                        while ( timeGetTime() < dwTime )
+                                                ;
 
-					__asm	
-						{
-						_emit 0fh
-						_emit 31h	// rdtsc
-						mov [dwEnd], eax
-						sub [dwHigh], edx
-						}
+                                        unsigned __int64 endTicks = ReadTimeStampCounter();
 
-					if ( dwHigh == 0 )
-						{
-						int iTime = dwEnd - dwStart;
-						m_iCpuSpeed = __min ( iTime, m_iCpuSpeed );
-						}
-					}
-				m_iCpuSpeed = ( (m_iCpuSpeed >> 12) * 133 + (0x1FAD / 2) ) / 0x1FAD;
-				bGotSpeed = TRUE;
-				}
-
-			catch (...)
-				{
-				}
+                                        if ( endTicks > startTicks )
+                                                {
+                                                unsigned __int64 delta = endTicks - startTicks;
+                                                if ( ( delta >> 32 ) == 0 )
+                                                        {
+                                                        int iTime = static_cast<int>( delta );
+                                                        m_iCpuSpeed = __min( iTime, m_iCpuSpeed );
+                                                        }
+                                                }
+                                        }
+                                m_iCpuSpeed = ( ( m_iCpuSpeed >> 12 ) * 133 + ( 0x1FAD / 2 ) ) / 0x1FAD;
+                                bGotSpeed = TRUE;
+                                }
+                        catch ( ... )
+                                {
+                                }
 			}
 
 		if ( ! bGotSpeed )
@@ -514,20 +521,14 @@ BOOL CConquerApp::InitInstance()
 				SetThreadPriority ( THREAD_PRIORITY_HIGHEST );
 				::Sleep (10);
 				DWORD dwStart = timeGetTime ();
-				_asm
-					{
-					push	ebx
-					mov	ecx, 100000h
-					jmp	_flush2
-_flush2:
-					mov eax, 01234h
-					mov edx, 10h
-					mov	ebx, 100
-					div ebx
-					div	ebx
-					loop	_flush2
-					pop	ebx
-					}
+				const unsigned burnIterations = 0x100000;
+				for ( unsigned iteration = 0; iteration < burnIterations; ++iteration )
+				        {
+				        unsigned long long value = ( static_cast<unsigned long long>( 0x10 ) << 32 ) | 0x1234u;
+				        value /= 100u;
+				        value /= 100u;
+				        g_cpuBurnAccumulator += value;
+				        }
 				DWORD dwTime = timeGetTime () - dwStart;
 				SetThreadPriority ( iPri );
 				::Sleep (10);

@@ -30,6 +30,23 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 #endif
 #define new DEBUG_NEW
 
+static DWORD GetRadarMaskPixelValue( BYTE const *pPixel, int iBytesPerPixel )
+{
+        DWORD dwValue = 0;
+
+        if ( NULL == pPixel || iBytesPerPixel <= 0 )
+                return 0;
+
+        int iCopy = iBytesPerPixel;
+
+        if ( iCopy > ( int )sizeof( dwValue ) )
+                iCopy = sizeof( dwValue );
+
+        memcpy( &dwValue, pPixel, iCopy );
+
+        return dwValue;
+}
+
 const int BTN_X_OFF = 8;
 const int BTN_Y_OFF = 8;
 
@@ -862,7 +879,7 @@ void CWndWorld::_OnSize ()
 		}
 
 	// we have to do this cause the button bar is in the cx, cy area
-	// resize the WinG wnd
+	// resize the renderer window
 	CRect rect;
 	GetClientRect (&rect);
 	m_dibwnd.Size (MAKELPARAM (rect.right, rect.bottom));
@@ -893,43 +910,49 @@ void CWndWorld::_OnSize ()
 	CDIB * pDibRadarBm = theBitmaps.GetByIndex (m_bIsRadar ? DIB_RADAR : DIB_WORLD);
 	pDibRadarBm->StretchBlt ( m_pdibRadar, m_pdibRadar->GetRect (), pDibRadarBm->GetRect ());
 
-	// use 8-bit radar art to determine m_piRadarEdges
+	// use the radar mask art to determine m_piRadarEdges
 	// we StretchBlt to a temp DIB but OnSize is pretty damn rare
 	CDIB * pDibRadarMask = theBitmaps.GetByIndex (m_bIsRadar ? DIB_RADAR_MASK : DIB_WORLD_MASK);
-	CDIB * pdib8Radar = new CDIB ( CColorFormat (CColorFormat::DEPTH_EIGHT), CBLTFormat::DIB_MEMORY,
+	CDIB * pDibRadarMaskCopy = new CDIB ( pDibRadarMask->GetColorFormat(), CBLTFormat::DIB_MEMORY,
 									CBLTFormat::DIR_TOPDOWN, m_cx, m_cy );
-	pDibRadarMask->StretchBlt (pdib8Radar, pdib8Radar->GetRect (), pDibRadarMask->GetRect ());
+	pDibRadarMask->StretchBlt (pDibRadarMaskCopy, pDibRadarMaskCopy->GetRect (), pDibRadarMask->GetRect ());
 
 	// ok, we store the left side, then the right side of each row
 	int * piOn = m_piRadarEdges = new int [m_cy * 2];
 	BYTE * pDibRadar, * pDibRadarLine;
-	{	// GG: Make sure dibits leaves scope before pDib8Radar is deleted - else assertion
-	CDIBits	dibits = pdib8Radar->GetBits();
+	{	// GG: Make sure dibits leaves scope before pDibRadarMaskCopy is deleted - else assertion
+	CDIBits	dibits = pDibRadarMaskCopy->GetBits();
 	pDibRadar = pDibRadarLine = dibits;
-	int iRadarPitch = pdib8Radar->GetDirPitch ();
+	int iRadarPitch = pDibRadarMaskCopy->GetDirPitch ();
+	int iMaskBytesPerPixel = pDibRadarMaskCopy->GetBytesPerPixel ();
+	DWORD dwBackground = GetRadarMaskPixelValue( pDibRadarLine, iMaskBytesPerPixel );
 
 	// left
 	for (int y=0; y<m_cy; y++)
 		{
 		int x = 0;
-		while ((*pDibRadar != 253) && (x < m_cx))
+		while ((GetRadarMaskPixelValue( pDibRadar, iMaskBytesPerPixel ) == dwBackground) && (x < m_cx))
 			{
-			pDibRadar ++;
+			pDibRadar += iMaskBytesPerPixel;
 			x ++;
 			}
 		*piOn++ = x;
 
 		// right
-		while ((*pDibRadar == 253) && (x < m_cx))
+		while ((GetRadarMaskPixelValue( pDibRadar, iMaskBytesPerPixel ) != dwBackground) && (x < m_cx))
 			{
-			pDibRadar ++;
+			pDibRadar += iMaskBytesPerPixel;
 			x ++;
 			}
 		*piOn++ = x;
-		pDibRadar = (pDibRadarLine += iRadarPitch);
+		if ( y + 1 < m_cy )
+			{
+			pDibRadar = (pDibRadarLine += iRadarPitch);
+			dwBackground = GetRadarMaskPixelValue( pDibRadarLine, iMaskBytesPerPixel );
+			}
 		}
 	}
-	delete pdib8Radar;
+	delete pDibRadarMaskCopy;
 
 	// get the buttons
 	CDIB * pDibBtnBm = theBitmaps.GetByIndex (m_bIsRadar ? DIB_RADAR_BUTTONS : DIB_WORLD_BUTTONS);

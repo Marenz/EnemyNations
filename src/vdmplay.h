@@ -22,7 +22,9 @@
 #endif
 
 #ifdef WIN32
-#ifndef VPSYSTEM
+#if defined(VDMPLAY_STATIC)
+#define VPAPI
+#elif !defined(VPSYSTEM)
 #define VPAPI __declspec(dllimport)
 #else
 #define VPAPI __declspec(dllexport)
@@ -57,6 +59,8 @@ typedef const void FAR *LPCVOID;
 #define VPAPI_VERSION ((VPAPIVERSION_MAJOR << 8) | VPAPIVERSION_MINOR)
 
 #pragma pack(8)
+
+struct LANA_ENUM;
 
 enum VPNOTIFICATION
 {
@@ -494,6 +498,13 @@ BOOL VPAPI vpGetServerAddress(
 BOOL VPAPI vpAdvancedSetup(int protocol);
 
 #endif
+
+int VPAPI vpFetchInt(LPCSTR section, LPCSTR key, int defaultValue);
+void VPAPI vpStoreInt(LPCSTR section, LPCSTR key, int value);
+void VPAPI vpFetchString(LPCSTR section, LPCSTR key, LPCSTR defaultValue, LPSTR buffer, int bufferSize);
+void VPAPI vpStoreString(LPCSTR section, LPCSTR key, LPCSTR value);
+void VPAPI vpMakeIniFile(LPCSTR fileName);
+void VPAPI vpGetLanas(LANA_ENUM* lanaEnum);
 
 }
 

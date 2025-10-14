@@ -19,6 +19,7 @@
 #include "sprite.h"
 #include "lastplnt.h"
 #include "error.h"
+#include "detail/sprite_sampling.h"
 
 #include "terrain.inl"
 #include "unit.inl"
@@ -1263,190 +1264,22 @@ CSpriteDIB::TerrainDrawQuadVert(
 
 			fixTopV += fixTopDV;
 			
-			static int	nPixels;
+			const int nPixels = iDstBotYClipped - iDstTopYClipped + 1;
 
-			nPixels  = iDstBotYClipped - iDstTopYClipped + 1;
-
-			__asm
+			if ( nPixels > 0 )
 			{
-				mov	  eax, [nPixels]
-				cmp	  eax, 0
-				jle	  TexLoopDone2
-
-				; setup initial coordinates
-  
- 				mov     ecx, [fixV]                	; get v 16.16 fixedpoint coordinate
-				mov	  edx, ecx							; copy it
- 				shl     ecx, 16                     ; get fractional part
-				sar	  edx, 16							; integer part
-				imul	  edx, iSrcWBytes				   ; offset of start source pixel
-
-  				mov     esi, [pSrcOrgTop]    			; source address
-				add	  esi, edx							; point to start source pixel
-
-				mov	  edi, [pDst]						; dest pointer
-				mov	  ebx, [iDstDirPitch]			; Dest row length in bytes
-				mov	  edx, [fixDV]						; v delta
- 				shl     edx, 16                     ; get fractional part
-				mov	  eax, iBytesPerPixel
-
-				push    ebp                         ; free up another register
-
-  				; can't access stack frame
-
- 				; edi = dest dib bits at current pixel
-				; esi = texture pointer at current u,v
-				; ebx = dest row length, in bytes
-				; ecx = v fraction
-				; edx = v frac
- 				; ebp = v carry scratch
-
-				cmp	eax,	4
-				je		TexLoop4Bytes
-				cmp	eax,	3
-				je		TexLoop3Bytes
-				cmp	eax,	2
-				je		TexLoop2Bytes
-
-				; 1-byte per pixel case
-
-				mov	ebp, [nPixels]		; # of rows
-				add	[nPixels], 3		; unrolled loop count is
-				shr	[nPixels], 2		; 	( count + 3 ) / 4
-				bt		ebp, 0				; 1 or 3 extra rows?
-				jnc	EvenRows				; no, 2 or 4
-				bt		ebp, 1				; 3 extra rows?
-				jc		TexLoopOneByte3	; yes
-				jmp	TexLoopOneByte1	; 1 extra row
-
-				EvenRows:
-
-				bt		ebp, 1				; 2 extra rows?
-				jc		TexLoopOneByte2	; yes
-
-				; edi = dest dib bits at current pixel
-				; esi = texture pointer at current u,v
-				; ebx = dest row length, in bytes
-				; ecx = v fraction
-				; edx = v frac
-  				; ebp = v carry scratch
-
-				mov	al,  	 [edi]								; preread the destination cache line
-
-				TexLoopOneByte4:
-
-				mov	al,    [esi]                    		; get texture pixel 1
-  				add   ecx,   edx			            		; increment v fraction
- 				sbb   ebp,   ebp                     		; get -1 if carry
-				mov   [edi], al                  			; store pixel 1
-				add   esi,   x_aiVintVfracStepV[4+ebp*4]	; add in step ints & carries
-				add	edi,	 ebx									; bump dest pointer to next row
-
-				TexLoopOneByte3:
-
-				mov	al,    [esi]                    		; get texture pixel 1
-  				add   ecx,   edx			            		; increment v fraction
- 				sbb   ebp,   ebp                     		; get -1 if carry
-				mov   [edi], al                  			; store pixel 1
-				add   esi,   x_aiVintVfracStepV[4+ebp*4]	; add in step ints & carries
-				add	edi,	 ebx									; bump dest pointer to next row
-
-				TexLoopOneByte2:
-
-				mov	al,    [esi]                    		; get texture pixel 1
-  				add   ecx,   edx			            		; increment v fraction
- 				sbb   ebp,   ebp                     		; get -1 if carry
-				mov   [edi], al                  			; store pixel 1
-				add   esi,   x_aiVintVfracStepV[4+ebp*4]	; add in step ints & carries
-				add	edi,	 ebx									; bump dest pointer to next row
-
-				TexLoopOneByte1:
-
-				mov	al,    [esi]                    		; get texture pixel 1
-  				add   ecx,   edx			            		; increment v fraction
- 				sbb   ebp,   ebp                     		; get -1 if carry
-				mov   [edi], al                  			; store pixel 1
-				add   esi,   x_aiVintVfracStepV[4+ebp*4]	; add in step ints & carries
-				add	edi,	 ebx									; bump dest pointer to next row
-
-				dec	[nPixels]									; dec loop counter
-				jnz	TexLoopOneByte4							; loop if not done
-  				jmp	TexLoopDone
-
-				; 2 bytes per pixel case
-
-				TexLoop2Bytes:
-
-				mov	al,    	[esi+0]                  		; get texture pixel 1
-				mov   [edi+0], al                  				; store pixel 1
-				mov	al,    	[esi+1]                  		; get texture pixel 1
-				mov   [edi+1], al                  				; store pixel 1
-  				add   ecx,   	edx			            		; increment v fraction
- 				sbb   ebp,   	ebp                     		; get -1 if carry
-				add   esi,   	x_aiVintVfracStepV[4+ebp*4]	; add in step ints & carries
-				add	edi,	 	ebx									; bump dest pointer to next row
-				dec	[nPixels]										; dec loop counter
-				jnz	TexLoop2Bytes 									; loop if not done
-				jmp	TexLoopDone
-
-				; 3 bytes per pixel case
-
-				TexLoop3Bytes:
-
-				mov	al,    	[esi+0]                  		; get texture pixel 1
-				mov   [edi+0], al                  				; store pixel 1
-				mov	al,    	[esi+1]                  		; get texture pixel 1
-				mov   [edi+1], al                  				; store pixel 1
-				mov	al,    	[esi+2]                  		; get texture pixel 1
-				mov   [edi+2], al                  				; store pixel 1
- 				add   ecx,   	edx			            		; increment v fraction
- 				sbb   ebp,   	ebp                     		; get -1 if carry
-				add   esi,   	x_aiVintVfracStepV[4+ebp*4]	; add in step ints & carries
-				add	edi,	 	ebx									; bump dest pointer to next row
-				dec	[nPixels]										; dec loop counter
-				jnz	TexLoop3Bytes									; loop if not done
-				jmp	TexLoopDone
-
-				; 4 bytes per pixel case
-
-				TexLoop4Bytes:
-
-				mov	al,    	[esi+0]                  		; get texture pixel 1
-  				mov   [edi+0], al                  				; store pixel 1
-				mov	al,    	[esi+1]                  		; get texture pixel 1
-  				mov   [edi+1], al                  				; store pixel 1
-				mov	al,    	[esi+2]                  		; get texture pixel 1
-  				mov   [edi+2], al                  				; store pixel 1
-				mov	al,    	[esi+3]                  		; get texture pixel 1
-  				mov   [edi+3], al                  				; store pixel 1
-   			add   ecx,   	edx			            		; increment v fraction
- 				sbb   ebp,   	ebp                     		; get -1 if carry
-  				add   esi,   	x_aiVintVfracStepV[4+ebp*4]	; add in step ints & carries
-				add	edi,	 	ebx									; bump dest pointer to next row
-				dec	[nPixels]										; dec loop counter
-				jnz	TexLoop4Bytes									; loop if not done
-
-				TexLoopDone:
-
-   			pop	ebp												; stack available again
-
-				TexLoopDone2:
-
-				mov	eax, iBytesPerPixel
-				add	pSrcOrgTop,	eax								; Bump source pointer to top of next row
+				enations::sprite_detail::CopyVerticalColumn(
+					reinterpret_cast<std::uint8_t*>( pDst ),
+					iDstDirPitch,
+					reinterpret_cast<const std::uint8_t*>( pSrcOrgTop ),
+					iSrcWBytes,
+					iBytesPerPixel,
+					nPixels,
+					fixV,
+					fixDV );
 			}
 
-		  /*
-				while ( nPixels-- )
-				{
-					memcpy( pDst, pSrcOrgTop + ( fixV >> 16 ) * iSrcWBytes, m_iBytesPerPixel );
-				
-					pDst += iDstDirPitch;
-					fixV += fixDV;
-				}
-
 				pSrcOrgTop += iBytesPerPixel;
-			*/
 		}
 	}
 }
@@ -1736,11 +1569,10 @@ CSpriteDIB::VehicleDraw(
 		{
 			case 1:
 
-				/*
 				while ( nCols-- )
 				{
-					int	iV = fixV >> 16;
-					int	iU = fixU >> 16;
+					int		iV = fixV >> 16;
+					int		iU = fixU >> 16;
 
 					int iDist = iSrcWBytes * iV + iU;
 
@@ -1756,109 +1588,6 @@ CSpriteDIB::VehicleDraw(
 					fixV += fixDVX;
 
 					pDst++;
-				}
-				*/
-
-				__asm
-				{
-					; setup initial coordinates
-    
-    				mov     esi, [fixU]          			; get u 16.16 fixedpoint coordinate
-    				mov     ebx, esi                    ; copy it
-    				sar     esi, 16                     ; get integer part
-    				shl     ebx, 16                     ; get fractional part
-    
-    				mov     ecx, [fixV]                	; get v 16.16 fixedpoint coordinate
-    				mov     edx, ecx                    ; copy it
-    				sar     edx, 16                     ; get integer part
-    				shl     ecx, 16                     ; get fractional part
-
-    				imul    edx, [iSrcWBytes]      		; calc texture scanline address
-    				add     esi, edx                    ; calc texture offset
-    				add     esi, [pSrc]         			; calc address
-
-    				mov     edx, [x_iDUFrac]				; get register copy
-					mov	  edi, [pDst]						; dest pointer
-
-    				push    ebp                         ; free up another register
-
-    				; can't access stack frame
-
-					; Determine entry point into loop
-
-					mov	ebp, [nCols]		; # of rows
-					add	[nCols], 3			; unrolled loop count is
-					shr	[nCols], 2			; 	( count + 3 ) / 4
-					bt		ebp, 0				; 1 or 3 extra rows?
-					jnc	EvenRows				; no, 2 or 4
-					bt		ebp, 1				; 3 extra rows?
-					jc		TexLoop3				; yes
-					jmp	TexLoop1				; 1 extra row
-
-					EvenRows:
-
-					bt		ebp, 1				; 2 extra rows?
-					jc		TexLoop2				; yes
-
-    				; edi = dest dib bits at current pixel
-    				; esi = texture pointer at current u,v
-    				; ebx = u fraction
-    				; ecx = v fraction
-    				; edx = u frac step
-    				; ebp = v carry scratch
-
-					mov	al,  	 [edi]								; preread the destination cache line
-
-					; Texture-map loop, unrolled 4x
-TexLoop4:
-					mov	al,    [esi]                    		; get texture pixel 1
-    				add   ecx,   [x_iDVFrac]            		; increment v fraction
-    				sbb   ebp,   ebp                     		; get -1 if carry
-					cmp	al,	 253									; a transparent pixel?
-					je		SkipPixel4									;	yes, skip it		
-    				mov   [edi], al                  			; store pixel 1
-SkipPixel4:
-    				add   ebx,   edx                     		; increment u fraction
-    				adc   esi,   x_aiUVintVfracStepV[4+ebp*4]	; add in step ints & carries
-					inc	edi
-TexLoop3:
-					mov	al,    [esi]                    		; get texture pixel 1
-    				add   ecx,   [x_iDVFrac]            		; increment v fraction
-    				sbb   ebp,   ebp                     		; get -1 if carry
-					cmp	al,	 253									; a transparent pixel?
-					je		SkipPixel3									;	yes, skip it		
-    				mov   [edi], al                  			; store pixel 1
-SkipPixel3:
-    				add   ebx,   edx                     		; increment u fraction
-    				adc   esi,   x_aiUVintVfracStepV[4+ebp*4]	; add in step ints & carries
-					inc	edi
-TexLoop2:
-					mov	al,    [esi]                    		; get texture pixel 1
-    				add   ecx,   [x_iDVFrac]            		; increment v fraction
-    				sbb   ebp,   ebp                     		; get -1 if carry
-					cmp	al,	 253									; a transparent pixel?
-					je		SkipPixel2									;	yes, skip it		
-    				mov   [edi], al                  			; store pixel 1
-SkipPixel2:
-    				add   ebx,   edx                     		; increment u fraction
-    				adc   esi,   x_aiUVintVfracStepV[4+ebp*4]	; add in step ints & carries
-					inc	edi
-TexLoop1:
-					mov	al,    [esi]                    		; get texture pixel 1
-    				add   ecx,   [x_iDVFrac]            		; increment v fraction
-    				sbb   ebp,   ebp                     		; get -1 if carry
-					cmp	al,	 253									; a transparent pixel?
-					je		SkipPixel1									;	yes, skip it		
-    				mov   [edi], al                  			; store pixel 1
-SkipPixel1:
-    				add   ebx,   edx                     		; increment u fraction
-    				adc   esi,   x_aiUVintVfracStepV[4+ebp*4]	; add in step ints & carries
-					inc	edi
-
-					dec	[nCols]
-					jnz	TexLoop4
-
-    				pop	ebp											; stack available again
 				}
 
 				break;

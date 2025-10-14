@@ -11,6 +11,7 @@
 
 #include "stdafx.h"
 #include "_windwrd.h"
+#include "windward/scanline_math.h"
 
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -150,113 +151,17 @@ ScanList::ScanPoly(
 
 		if ( 0 == iDelX )
 		{
-			__asm
-			{
-				; Fill the column with the same x-coordinate
-
-				mov	eax,[iX]
-				mov	edi,[pi]
-				mov	ecx,[iCount]
-				rep	stosd
-			}
+			windward::scanlist_detail::FillConstant( pi, iCount, iX );
 		}
 		else
 		{
-			__asm
-			{
-				; Calc fixed-point delta-x
-
-				mov	ebx, [iDelY]		; integer divisor
-				mov 	eax, [iDelX]		; integer dividend
-				shl	ebx, 16				; fixed-point divisor
-				shl	eax, 16				; fixed-point dividend
-				cdq							; convert to 64 bits
-				shld	edx, eax, 16
-				shl	eax, 16
-				idiv	ebx					; divide - eax contains now fixed-point delta-x
-
-				; eax	- whole part of delta-x (in ax)
-				; ebx	- current x-coordinate
-				; ecx	- loop counter
-				; edx	- fractional part of delta-x (in upper 2 bytes)
-				; esi	- accumulated fractional part of delta-x (in upper 2 bytes)
-				; edi	- destination pointer
-
-				; Initialize loop
-
-				mov	edi, [pi]			; destination pointer
-				mov	ebx, [iX]			; initial x-coordinate
-				mov	ecx, [iCount]		; # of rows
-				mov	edx, eax				; assign 16.16 delta-x to edx
-				mov	esi, 80000000H		; initial fractional accumulation (1/2 starts in the middle of the pixel)
-				sar	eax, 16				; whole part of delta-x
-				shl	edx, 16				; fractional part of delta-x stored in upper 2 bytes
-
-				push	ebp					; extra register
-
-				; Can't access stack frame
-
-				; Determine entry point into loop (jump table is easier, but can't dw with inline asm)
-
-				mov	ebp, ecx				; # of rows
-				add	ecx, 3				; unrolled loop count is 
-				shr	ecx, 2				; 	( count + 3 ) / 4
-				bt		ebp, 0				; 1 or 3 extra rows?
-				jnc	EvenRows				; no, 2 or 4
-				bt		ebp, 1				; 3 extra rows?
-				jc		LoopEntry3			; yes
-				jmp	LoopEntry1			; 1 extra row
-
-				EvenRows:
-
-				bt		ebp, 1				; 2 extra rows?
-				jc		LoopEntry2			; yes
-
-				; Calculate the x-coordinate for each row (loop unrolled 4x)
-				; Should be 2 cycles per pixel on a Pentium
-
-				LoopEntry4:
-
-				mov	[edi],	ebx		; assign the x-coordinate (mov/add faster than stosd on Pentium)
-				add	esi, 		edx		; add fractional step to accumulated fractional step
-				adc	ebx,		eax		; add delta whole step to current x-coord (plus 1 if accumulated fractional step >= 1)
-				add	edi,		4 			; bump dest pointer for next x-coordinate
-
-				LoopEntry3:
-
-				mov	[edi],	ebx		; assign the x-coordinate (mov/add faster than stosd on Pentium)
-				add	esi, 		edx		; add fractional step to accumulated fractional step
-				adc	ebx,		eax		; add delta whole step to current x-coord (plus 1 if accumulated fractional step >= 1)
-				add	edi,		4 			; bump dest pointer for next x-coordinate
-
-				LoopEntry2:
-
-				mov	[edi],	ebx		; assign the x-coordinate (mov/add faster than stosd on Pentium)
-				add	esi, 		edx		; add fractional step to accumulated fractional step
-				adc	ebx,		eax		; add delta whole step to current x-coord (plus 1 if accumulated fractional step >= 1)
-				add	edi,		4 			; bump dest pointer for next x-coordinate
-
-				LoopEntry1:
-
-				mov	[edi],	ebx		; assign the x-coordinate (mov/add faster than stosd on Pentium)
-				add	esi, 		edx		; add fractional step to accumulated fractional step
-				adc	ebx,		eax		; add delta whole step to current x-coord (plus 1 if accumulated fractional step >= 1)
-				add	edi,		4 			; bump dest pointer for next x-coordinate
-
-				dec	ecx					; decrement loop counter (dec/jnz faster than loopnz)
-
-				jnz	LoopEntry4			; next iteration - ggtodo: unroll for 486?
-
-				pop	ebp
-
-				; Can access stack frame
-			}
-
-//			while ( iCount-- > 0 )
-//			{
-//				*pi++ = fixX >> 16;
-//				fixX += fixDelta;
-//			}
+			windward::scanlist_detail::FillInterpolatedIntegers(
+				pi,
+				iCount,
+				iX,
+				iDelX,
+				iDelY );
+		}
 		}
 	}
 
@@ -329,97 +234,17 @@ ScanList::ScanPolyFixed(
 
 		if ( 0 == iDelX )
 		{
-			__asm
-			{
-				; Fill the column with the same x-coordinate
-
-				mov	eax,[fixX]
-				mov	edi,[pi]
-				mov	ecx,[iCount]
-				rep	stosd
-			}
+			windward::scanlist_detail::FillConstant( pi, iCount, fixX );
 		}
 		else
 		{
-			__asm
-			{
-				; Calc fixed-point delta-x
-
-				mov	ebx, [iDelY]		; integer divisor
-				mov 	eax, [iDelX]		; integer dividend
-				shl	ebx, 16				; fixed-point divisor
-				shl	eax, 16				; fixed-point dividend
-				cdq							; convert to 64 bits
-				shld	edx, eax, 16
-				shl	eax, 16
-				idiv	ebx					; divide - eax contains now fixed-point delta-x
-
-				; eax	- whole part of delta-x (in ax)
-				; ebx	- current x-coordinate
-				; ecx	- loop counter
-				; edx	- fractional part of delta-x (in upper 2 bytes)
-				; esi	- accumulated fractional part of delta-x (in upper 2 bytes)
-				; edi	- destination pointer
-
-				; Initialize loop
-
-				mov	edi, [pi]			; destination pointer
-				mov	ebx, [fixX]			; initial x-coordinate
-				mov	ecx, [iCount]		; # of rows
-
-				; Determine entry point into loop (jump table is easier, but can't dw with inline asm)
-
-				mov	edx, ecx				; # of rows
-				add	ecx, 3				; unrolled loop count is 
-				shr	ecx, 2				; 	( count + 3 ) / 4
-				bt		edx, 0				; 1 or 3 extra rows?
-				jnc	EvenRows				; no, 2 or 4
-				bt		edx, 1				; 3 extra rows?
-				jc		LoopEntry3			; yes
-				jmp	LoopEntry1			; 1 extra row
-
-				EvenRows:
-
-				bt		edx, 1				; 2 extra rows?
-				jc		LoopEntry2			; yes
-
-				; Calculate the x-coordinate for each row (loop unrolled 4x)
-				; Should be 2 cycles per pixel on a Pentium
-
-				LoopEntry4:
-
-				mov	[edi],	ebx		; assign the x-coordinate (mov/add faster than stosd on Pentium)
-				add	ebx,		eax		; add delta whole step to current x-coord (plus 1 if accumulated fractional step >= 1)
-				add	edi,		4 			; bump dest pointer for next x-coordinate
-
-				LoopEntry3:
-
-				mov	[edi],	ebx		; assign the x-coordinate (mov/add faster than stosd on Pentium)
-				add	ebx,		eax		; add delta whole step to current x-coord (plus 1 if accumulated fractional step >= 1)
-				add	edi,		4 			; bump dest pointer for next x-coordinate
-
-				LoopEntry2:
-
-				mov	[edi],	ebx		; assign the x-coordinate (mov/add faster than stosd on Pentium)
-				add	ebx,		eax		; add delta whole step to current x-coord (plus 1 if accumulated fractional step >= 1)
-				add	edi,		4 			; bump dest pointer for next x-coordinate
-
-				LoopEntry1:
-
-				mov	[edi],	ebx		; assign the x-coordinate (mov/add faster than stosd on Pentium)
-				add	ebx,		eax		; add delta whole step to current x-coord (plus 1 if accumulated fractional step >= 1)
-				add	edi,		4 			; bump dest pointer for next x-coordinate
-
-				dec	ecx					; decrement loop counter (dec/jnz faster than loopnz)
-
-				jnz	LoopEntry4			; next iteration - ggtodo: unroll for 486?
-			}
-
-//			while ( iCount-- > 0 )
-//			{
-//				*pi++ = fixX;
-//				fixX += fixDelta;
-//			}
+			windward::scanlist_detail::FillInterpolatedFixed(
+				pi,
+				iCount,
+				fixX,
+				iDelX,
+				iDelY );
+		}
 		}
 	}
 

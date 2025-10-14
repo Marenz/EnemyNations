@@ -167,7 +167,6 @@ public:
 	BOOL								IsInRange( BYTE const *, int iBytes ) const;	
 	int								GetOffset( int x, int y ) { return GetRow( y ) * GetPitch() + x * GetBytesPerPixel(); }
 
-	LPDIRECTDRAWSURFACE			GetDDSurface();
 
 //--------------------------------------------------------------------------
 //	
@@ -254,18 +253,13 @@ private:
 	LONG						  m_lDirPitch;				// Pitch * direction
 	CBLTFormat::DIB_TYPE	  m_eType;
 	HDC						  m_hDCDib;	
-	HBITMAP					  m_hOrigBm;				// the original bitmap attached to hDCWinG
-	HBITMAP					  m_hTextBm;				// the original bitmap attached to hDCWinG
-	BITMAPINFO256			  m_bmi;						// WinG DIB header
-	DDSURFACEDESC			  m_ddOffSurfDesc;		// off-screen surface desc
-	LPDIRECTDRAWSURFACE	  m_pddsurfaceBack;		// off-screen surface (the bitmap)
-	HRESULT					  m_hRes;
+	HBITMAP					  m_hOrigBm;				// the original bitmap attached to m_hDCDib
+	HBITMAP					  m_hTextBm;				// the original bitmap attached to m_hDCDib
+	BITMAPINFO256			  m_bmi;						// Cached BITMAPINFO for the backing surface
 	Ptr< BITMAPINFO256 >	  m_ptrbmiIdentity;
 	int						  m_iLock;
 	BOOL						  m_bBitmapSelected;
 
-	Ptr< CWinG >			  m_ptrwing;
-	Ptr< CDirectDraw >	  m_ptrdirectdraw;
 };
 
 
@@ -315,27 +309,6 @@ inline CDIBHDC::~CDIBHDC()
 	m_pdib->ReleaseDC();
 }
 
-//-------------------------------------------------------------------------
-// CDIB::GetDDSurface
-//-------------------------------------------------------------------------
-inline LPDIRECTDRAWSURFACE
-CDIB::GetDDSurface()
-{
-	ASSERT( CBLTFormat::DIB_DIRECTDRAW == m_eType );
-   ASSERT( m_pddsurfaceBack );
-
-	m_hRes = m_pddsurfaceBack->IsLost();
-
-	if ( m_hRes == DDERR_SURFACELOST )
-		m_hRes = m_pddsurfaceBack->Restore();
-
-	if ( FAILED( m_hRes ))
-		;	// GGFIXIT: throw
-
-	return m_pddsurfaceBack;
-}
-
-/////////////////////////////////////////////////////////////////////////////
 // init a CDIB with a DIB
 inline void CDIB::SetBits ( BITMAPFILEHEADER * pBfhSrc)
 {

@@ -29,6 +29,8 @@ const int LOG_SEC_RESERVED =		0x00000004;
 
 #else
 
+#include <windward/platform/critical_section.h>
+
 
 class CLog
 {
@@ -42,8 +44,8 @@ public:
 
 protected:
 
-	CFile m_File;
-	CRITICAL_SECTION m_cs;
+        CFile m_File;
+        windward::platform::CriticalSection m_cs;
 
 	int			m_iSection;
 	int			m_iLevel;
